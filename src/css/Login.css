@@ -1,0 +1,81 @@
+/* Login.css */
+.login-container {
+    height: 100vh;
+    background: linear-gradient(to right, #1c1c1c, #2c2c2c);
+    background-image: url('https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=1950&q=80');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Merriweather', serif;
+    color: #fff;
+  }
+  
+  .login-box {
+    background-color: rgba(0, 0, 0, 0.75);
+    border-radius: 16px;
+    padding: 2rem 3rem;
+    width: 350px;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+  }
+  
+  .login-box h1 {
+    font-size: 2rem;
+    text-align: center;
+    margin-bottom: 0.5rem;
+    font-family: 'Cinzel', serif;
+  }
+  
+  .login-box h2 {
+    text-align: center;
+    font-size: 1.2rem;
+    margin-bottom: 1.5rem;
+    font-weight: normal;
+  }
+  
+  .login-box form {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .login-box input {
+    padding: 0.8rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    border: none;
+    font-size: 1rem;
+    background-color: #f8f8f8;
+    color: #333;
+  }
+  
+  .login-box button {
+    padding: 0.8rem;
+    background-color: #e50914; /* Netflix red */
+    color: #fff;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+  
+  .login-box button:hover {
+    background-color: #b20710;
+  }
+  
+  .login-box p {
+    text-align: center;
+    margin-top: 1rem;
+  }
+  
+  .login-box a {
+    color: #ffa500;
+    text-decoration: none;
+  }
+  
+  .login-box a:hover {
+    text-decoration: underline;
+  }
+  

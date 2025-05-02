@@ -1,0 +1,61 @@
+.movies-home-container {
+    height: 100vh;
+    background: linear-gradient(to right, #1c1c1c, #2c2c2c),
+      url('https://images.unsplash.com/photo-1581905764498-a60a03a5a13d?auto=format&fit=crop&w=1950&q=80');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Merriweather', serif;
+    color: #fff;
+  }
+  
+  .movies-home-box {
+    background-color: rgba(0, 0, 0, 0.75);
+    border-radius: 16px;
+    padding: 2rem 3rem;
+    width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    text-align: center;
+  }
+  
+  .movies-home-box h1 {
+    font-size: 2.5rem;
+    font-family: 'Cinzel', serif;
+    margin-bottom: 0.5rem;
+  }
+  
+  .movies-home-box h2 {
+    font-size: 1.2rem;
+    color: #e6e6e6;
+    margin-bottom: 1.5rem;
+    font-weight: normal;
+  }
+  
+  .movie-recommendation {
+    margin: 10px 0;
+    padding: 1rem;
+    border: 2px solid #ff4c4c;
+    border-radius: 10px;
+    background-color: transparent;
+    color: #fff;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    font-size: 1.05rem;
+  }
+  
+  .movie-recommendation:hover {
+    background-color: rgba(255, 76, 76, 0.8);
+  }
+  
+  @media (max-width: 500px) {
+    .movies-home-box {
+      width: 85%;
+      padding: 1.5rem;
+    }
+  }
+  

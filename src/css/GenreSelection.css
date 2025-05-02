@@ -1,0 +1,160 @@
+/* Dark-mode page background */
+body {
+    background-color: #121212;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+  }
+  
+  /* Center container */
+  .genre-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 50px 20px;
+    min-height: 100vh;
+  }
+  
+  /* Card */
+  .genre-box {
+    background-color: #1e1e1e;
+    padding: 40px 30px;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 640px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+    position: relative;
+    box-sizing: border-box;
+  }
+  
+  /* Decorative bar (behind title) */
+  .genre-box::before {
+    content: '';
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 6px;
+    width: 120px;
+    background: linear-gradient(90deg, #e63946, #f77f00);
+    z-index: -1;
+  }
+  
+  /* Title */
+  .genre-title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    text-align: center;
+    color: #e63946;
+    position: relative;
+  }
+  
+  /* Error */
+  .genre-error {
+    color: #ffcdd2;
+    background-color: #4b0000;
+    padding: 12px;
+    border-radius: 6px;
+    margin: 0 24px 20px;
+    text-align: center;
+    font-weight: 500;
+  }
+  
+  /* Tabs */
+  .genre-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  
+  .genre-tab {
+    font-size: 18px;
+    font-weight: 600;
+    padding-bottom: 8px;
+    cursor: pointer;
+    color: #b0b0b0;
+    position: relative;
+  }
+  
+  .genre-tab.active {
+    color: #e63946;
+  }
+  
+  .genre-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #e63946, #f77f00);
+  }
+  
+  /* Form padding */
+  .genre-form {
+    padding: 0 24px 40px;
+  }
+  
+  /* Fixed two-column grid for books vs. movies */
+  .genre-checkbox-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 32px;
+    margin-bottom: 24px;
+  }
+  
+  /* Individual checkbox */
+  .genre-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    color: #e0e0e0;
+    padding: 8px;
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+  
+  .genre-checkbox:hover {
+    background-color: #2a2a2a;
+  }
+  
+  /* Checkbox styling */
+  .genre-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #e63946;
+  }
+  
+  /* Save button */
+  .genre-submit-btn {
+    display: block;
+    background-color: #e63946;
+    color: #ffffff;
+    padding: 14px 0;
+    font-size: 18px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    width: calc(100% - 48px);
+    margin: 0 auto;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+    transition: background-color 0.2s ease, transform 0.1s ease;
+  }
+  
+  .genre-submit-btn:hover {
+    background-color: #d62828;
+    transform: translateY(-2px);
+  }
+  
+  /* Loading state */
+  .genre-loading {
+    text-align: center;
+    padding: 60px;
+    font-size: 20px;
+    color: #888;
+  }
+  

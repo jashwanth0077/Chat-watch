@@ -1,0 +1,210 @@
+/* movecollections.css */
+
+/* Variables */
+:root {
+  --bg-page: #181818;
+  --bg-card: #242424;
+  --bg-input: #1f1f1f;
+  --text-primary: #ececec;
+  --text-secondary: #bbbbbb;
+  --accent: #ff4c4c;
+  --accent-hover: #e03b3b;
+  --border-radius: 10px;
+  --transition-fast: 0.2s ease;
+}
+
+/* Reset & Base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body,
+.movie-collections {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+}
+.movie-collections {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* Headings */
+h1, h2 {
+  color: var(--accent);
+  margin-bottom: 1rem;
+  position: relative;
+}
+h1::after, h2::after {
+  content: '';
+  display: block;
+  width: 50px;
+  height: 3px;
+  background: var(--accent);
+  margin-top: 0.5rem;
+  border-radius: 2px;
+}
+h1 { font-size: 2.5rem; }
+h2 { font-size: 1.75rem; }
+
+/* Forms */
+.form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.form-inline input,
+.form-inline select {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.75rem 1rem;
+  background: var(--bg-input);
+  border: 1px solid #333;
+  border-radius: var(--border-radius);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+}
+.form-inline input:focus,
+.form-inline select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.form-inline button {
+  padding: 0.75rem 1.25rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+.form-inline button:hover {
+  background: var(--accent-hover);
+}
+
+/* Search Section */
+.search-section {
+  position: relative;
+  margin-bottom: 2rem;
+}
+.search-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  background: var(--bg-card);
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 20;
+}
+.suggestions li {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+}
+.suggestions li:hover {
+  background: #2e2e2e;
+}
+
+/* Search Results */
+.search-results {
+  margin-top: 1rem;
+  list-style: none;
+  padding: 0;
+}
+.search-results li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid #333;
+  transition: background var(--transition-fast);
+}
+.search-results li:nth-child(odd) {
+  background: #202020;
+}
+.search-results li:hover {
+  background: #2a2a2a;
+}
+.search-results a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+.search-results a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* Collections List */
+.collections-list {
+  margin-top: 3rem;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 768px) {
+  .collections-list { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1200px) {
+  .collections-list { grid-template-columns: repeat(3, 1fr); }
+}
+.collection-card {
+  background: var(--bg-card);
+  padding: 1.5rem;
+  border-radius: var(--border-radius);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  transition: box-shadow var(--transition-fast);
+}
+.collection-card:hover {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+}
+.collection-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+}
+.collection-header:hover {
+  color: var(--accent-hover);
+}
+.collection-header .arrow {
+  transition: transform var(--transition-fast);
+}
+.collection-header[aria-expanded="true"] .arrow {
+  transform: rotate(90deg);
+}
+.collection-list {
+  margin-top: 1rem;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.collection-list li {
+  margin-bottom: 0.5rem;
+}
+.collection-list a {
+  color: var(--accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.collection-list a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}

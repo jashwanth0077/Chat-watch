@@ -1,0 +1,107 @@
+/* MoviesNavbar.css */
+
+.movies-navbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background-color: #1f1f1f;
+    color: white;
+    font-family: 'Segoe UI', sans-serif;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+  }
+  
+  .movies-navbar h1 {
+    font-size: 1.5rem;
+    margin-right: 20px;
+    cursor: default;
+  }
+  
+  .movies-navbar button {
+    background-color: #e50914;
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .movies-navbar button:hover {
+    background-color: #b00610;
+  }
+  
+  .movies-navbar .dropdown-container {
+    position: relative;
+  }
+  
+  .movies-navbar .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    background-color: #f9f9f9;
+    border: 1px solid #ccc;
+    z-index: 1000;
+    min-width: 160px;
+  }
+  
+  .movies-navbar .dropdown-menu button {
+    background: none;
+    color: #333;
+    padding: 10px;
+    text-align: left;
+    border: none;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .movies-navbar .dropdown-menu button:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .movies-navbar .search-container {
+    position: relative;
+    display: flex;
+    gap: 6px;
+  }
+  
+  .movies-navbar input[type="text"] {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    min-width: 200px;
+  }
+  
+  .movies-navbar select {
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+  
+  .movies-navbar .suggestions-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background-color: #1f1f1f;
+    border: 1px solid #ccc;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    z-index: 1000;
+  }
+  
+  .movies-navbar .suggestions-list li {
+    padding: 8px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    color: white;
+  }
+  
+  .movies-navbar .suggestions-list li:hover {
+    background-color: #b00610;
+  }
+  

@@ -1,0 +1,67 @@
+/* Import variables (if using CSS Modules or global styles) */
+:root {
+    --bg-page: #181818;
+    --bg-card: #242424;
+    --text-primary: #ececec;
+    --text-secondary: #bbbbbb;
+    --accent: #ff4c4c;
+    --accent-hover: #e03b3b;
+    --border-radius: 10px;
+    --transition-fast: 0.2s ease;
+  }
+  
+  .new-releases-container {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    padding: 2rem;
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  .new-releases-container h1 {
+    color: var(--accent);
+    font-size: 2.25rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+  }
+  
+  .new-releases-container h1::after {
+    content: '';
+    display: block;
+    width: 50px;
+    height: 3px;
+    background: var(--accent);
+    margin-top: 0.5rem;
+    border-radius: 2px;
+  }
+  
+  .new-releases-list {
+    list-style: none;
+    padding-left: 0;
+  }
+  
+  .new-releases-list li {
+    background-color: var(--bg-card);
+    margin-bottom: 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: var(--border-radius);
+    transition: background-color var(--transition-fast);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+  
+  .new-releases-list li:hover {
+    background-color: #2a2a2a;
+  }
+  
+  .book-link {
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+    transition: color var(--transition-fast);
+  }
+  
+  .book-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+  }
+  

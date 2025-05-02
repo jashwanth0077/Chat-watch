@@ -1,0 +1,100 @@
+.book-detail-overlay {
+    background: rgba(0, 0, 0, 0.8);
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  
+  .book-detail-container {
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 700px;
+    width: 100%;
+    display: flex;
+    gap: 20px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+  }
+  
+  .book-detail-thumbnail {
+    height: 180px;
+    border-radius: 4px;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+  }
+  
+  .book-detail-content h1 {
+    margin-top: 0;
+    color: #ffffff;
+  }
+  
+  .google-books-link {
+    font-size: 0.9rem;
+    color: #61dafb;
+    text-decoration: underline;
+  }
+  
+  .review-textarea {
+    width: 100%;
+    height: 100px;
+    margin-top: 8px;
+    padding: 10px;
+    background-color: #2c2c2c;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #f0f0f0;
+    resize: vertical;
+  }
+  
+  .book-detail-rating {
+    margin: 15px 0;
+  }
+  
+  .book-detail-button {
+    margin-top: 10px;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .book-detail-button:hover {
+    background-color: #357ab8;
+  }
+  
+  .review-list {
+    list-style: none;
+    padding: 0;
+  }
+  
+  .review-list li {
+    margin-bottom: 10px;
+  }
+  
+  .book-detail-close {
+    margin-top: 20px;
+    background: transparent;
+    border: 1px solid #999;
+    color: #ccc;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .book-detail-close:hover {
+    background-color: #333;
+    color: white;
+  }
+  
+  .interactive-stars {
+    display: inline-flex;
+    gap: 4px;
+    cursor: pointer;
+  }
+  
