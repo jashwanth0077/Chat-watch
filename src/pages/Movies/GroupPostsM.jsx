@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { apiUrl } from "../../config/config";
 import "./../../css/groupposts.css";
 
+// Helper to safely parse JSON responses
 async function safeJson(res) {
   const text = await res.text();
   const ct = res.headers.get("Content-Type") || "";
@@ -12,11 +13,13 @@ async function safeJson(res) {
   return JSON.parse(text);
 }
 
-const GroupPosts = () => {
+const MovieGroupPosts = () => {
+  // Route parameters & navigation
   const { id } = useParams();
   const navigate = useNavigate();
   const groupId = parseInt(id, 10);
 
+  // Component state declarations
   const [posts, setPosts] = useState([]);
   const [newPost, setNewPost] = useState("");
   const [expanded, setExpanded] = useState({});
@@ -29,6 +32,7 @@ const GroupPosts = () => {
   const [commenting, setCommenting] = useState({});
   const [updating, setUpdating] = useState({});
 
+  // Fetch posts on mount
   useEffect(() => {
     if (!groupId || isNaN(groupId)) {
       setError("Invalid group ID");
@@ -39,19 +43,20 @@ const GroupPosts = () => {
     (async () => {
       try {
         const res = await fetch(
-          `${apiUrl}/books/groups/${groupId}/posts`,
+          `${apiUrl}/movies/groups/${groupId}/posts`,
           { credentials: "include" }
         );
         const data = await safeJson(res);
         if (!res.ok) throw new Error(data.message || "Failed to load posts");
 
-        // Include `liked` flag from backend
+        // Attach user names and comments
         const formatted = (data.posts || []).map((p) => ({
           ...p,
-          user_name: p.user_name || p.username || "",
-          commentsData: (p.comments || []).map(c => ({
+          user_name: p.user_name ?? p.username ?? "",
+          liked: p.liked || false,
+          commentsData: (p.comments || []).map((c) => ({
             ...c,
-            user_name: c.user_name || c.username || ""
+            user_name: c.user_name ?? c.username ?? ""
           })),
         }));
 
@@ -64,16 +69,19 @@ const GroupPosts = () => {
     })();
   }, [groupId]);
 
+  // Expand/collapse comments
   const toggleExpand = (postId) =>
-    setExpanded((s) => ({ ...s, [postId]: !s[postId] }));
+    setExpanded((prev) => ({ ...prev, [postId]: !prev[postId] }));
 
+  // Submit a new post
   const handlePostSubmit = async (e) => {
     e.preventDefault();
     if (!newPost.trim()) return;
     setPosting(true);
+
     try {
       const res = await fetch(
-        `${apiUrl}/books/groups/${groupId}/posts`,
+        `${apiUrl}/movies/groups/${groupId}/posts`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,9 +92,16 @@ const GroupPosts = () => {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data.message || "Failed to post");
 
-      setPosts((p) => [
-        { ...data.post, user_name: data.post.user_name || data.post.username, commentsData: [], liked: false },
-        ...p,
+      // Prepend newly created post
+      setPosts((prev) => [
+        {
+          ...data.post,
+          user_name: data.post.user_name ?? data.post.username ?? "",
+          commentsData: [],
+          liked: false,
+          likes: 0,
+        },
+        ...prev,
       ]);
       setNewPost("");
     } catch (err) {
@@ -96,13 +111,14 @@ const GroupPosts = () => {
     }
   };
 
+  // Toggle like/unlike on a post
   const handleToggleLike = async (postId, liked) => {
     setLiking((l) => ({ ...l, [postId]: true }));
     try {
-      const method = liked ? 'DELETE' : 'POST';
+      const method = liked ? "DELETE" : "POST";
       const res = await fetch(
-        `${apiUrl}/books/groups/${groupId}/posts/${postId}/like`,
-        { method, credentials: 'include' }
+        `${apiUrl}/movies/groups/${groupId}/posts/${postId}/like`,
+        { method, credentials: "include" }
       );
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data.message);
@@ -121,13 +137,15 @@ const GroupPosts = () => {
     }
   };
 
+  // Submit a new comment
   const handleCommentSubmit = async (postId) => {
     const content = (commentInputs[postId] || "").trim();
     if (!content) return;
     setCommenting((c) => ({ ...c, [postId]: true }));
+
     try {
       const res = await fetch(
-        `${apiUrl}/books/groups/${groupId}/posts/${postId}/comments`,
+        `${apiUrl}/movies/groups/${groupId}/posts/${postId}/comments`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -137,6 +155,8 @@ const GroupPosts = () => {
       );
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data.message);
+
+      // Append newly created comment
       setPosts((prev) =>
         prev.map((p) =>
           p.post_id === postId
@@ -144,7 +164,7 @@ const GroupPosts = () => {
             : p
         )
       );
-      setCommentInputs((c) => ({ ...c, [postId]: "" }));
+      setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -152,10 +172,56 @@ const GroupPosts = () => {
     }
   };
 
+  // Edit an existing comment
+  const handleUpdateComment = async (postId, commentId) => {
+    const updatedContent = editingComments[commentId];
+    if (!updatedContent.trim()) return;
+    setUpdating((u) => ({ ...u, [commentId]: true }));
+
+    try {
+      const res = await fetch(
+        `${apiUrl}/movies/groups/${groupId}/posts/${postId}/comments/${commentId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ content: updatedContent.trim() }),
+        }
+      );
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data.message);
+
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.post_id !== postId) return p;
+          return {
+            ...p,
+            commentsData: p.commentsData.map((c) =>
+              c.comment_id === commentId
+                ? { ...c, content: data.comment.content }
+                : c
+            ),
+          };
+        })
+      );
+      setEditingComments((ec) => {
+        const newEc = { ...ec };
+        delete newEc[commentId];
+        return newEc;
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUpdating((u) => ({ ...u, [commentId]: false }));
+    }
+  };
+
+  // Show loading state
   if (loading) return <p className="loading">Loading posts…</p>;
 
   return (
     <div className="group-posts-container">
+      {/* Post form */}
       <form onSubmit={handlePostSubmit} className="post-form">
         <textarea
           value={newPost}
@@ -167,8 +233,10 @@ const GroupPosts = () => {
         </button>
       </form>
 
+      {/* Error message */}
       {error && <div className="error">{error}</div>}
 
+      {/* Posts list */}
       {posts.length === 0 ? (
         <div className="no-posts">No posts yet.</div>
       ) : (
@@ -179,20 +247,15 @@ const GroupPosts = () => {
             </div>
             <button
               className="username-link"
-              onClick={() => navigate(
-                `/books/profile_page_not_for_friends/${p.user_name}`
-              )}
+              onClick={() => navigate(`/movies/profile_page_not_for_friends/${p.user_name}`)}
             >
               {p.user_name}
             </button>
             <p className="content">{p.content}</p>
 
+            {/* Action buttons */}
             <div className="action-buttons">
-              <button
-                className={p.liked ? 'liked' : ''}
-                onClick={() => handleToggleLike(p.post_id, p.liked)}
-                disabled={liking[p.post_id]}
-              >
+              <button className={p.liked ? 'liked' : ''} onClick={() => handleToggleLike(p.post_id, p.liked)} disabled={liking[p.post_id]}>
                 {p.liked ? '💔 Unlike' : '👍 Like'} ({p.likes || 0})
               </button>
               <button onClick={() => toggleExpand(p.post_id)}>
@@ -200,13 +263,27 @@ const GroupPosts = () => {
               </button>
             </div>
 
+            {/* Comments section */}
             {expanded[p.post_id] && (
               <div className="comments-section">
                 {p.commentsData.length > 0 ? (
                   p.commentsData.map((c) => (
                     <div key={c.comment_id} className="comment">
-                      <strong>{c.user_name}</strong>: {c.content}
-                    </div>
+                      <strong>{c.user_name}</strong>: {' '}
+                      {editingComments[c.comment_id] !== undefined ? (
+                        <>                                    
+                          <input
+                            value={editingComments[c.comment_id]}
+                            onChange={(e) => setEditingComments((ec) => ({ ...ec, [c.comment_id]: e.target.value }))}
+                          />
+                          <button onClick={() => handleUpdateComment(p.post_id, c.comment_id)} disabled={updating[c.comment_id]}>
+                            {updating[c.comment_id] ? 'Updating...' : 'Update'}
+                          </button>
+                        </>
+                      ) : (
+                        c.content
+                      )}
+                    </div>  
                   ))
                 ) : (
                   <div className="comment">No comments yet.</div>
@@ -214,15 +291,10 @@ const GroupPosts = () => {
                 <div className="new-comment">
                   <textarea
                     value={commentInputs[p.post_id] || ''}
-                    onChange={(e) =>
-                      setCommentInputs((c) => ({ ...c, [p.post_id]: e.target.value }))
-                    }
+                    onChange={(e) => setCommentInputs((prev) => ({ ...prev, [p.post_id]: e.target.value }))}
                     placeholder="Write a comment..."
                   />
-                  <button
-                    onClick={() => handleCommentSubmit(p.post_id)}
-                    disabled={commenting[p.post_id]}
-                  >
+                  <button onClick={() => handleCommentSubmit(p.post_id)} disabled={commenting[p.post_id]}>
                     {commenting[p.post_id] ? 'Commenting...' : 'Comment'}
                   </button>
                 </div>
@@ -235,4 +307,4 @@ const GroupPosts = () => {
   );
 };
 
-export default GroupPosts;
+export default MovieGroupPosts;

@@ -137,3 +137,9 @@
     cursor: pointer;
   }
   
+
+  /* in groupposts.css */
+.action-buttons button.liked {
+  background-color: #4caf50; /* or your preferred highlight */
+  color: #fff;
+}

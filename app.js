@@ -899,40 +899,83 @@ app.get("/search-movies", isAuthenticated, async (req, res) => {
     return res.status(400).json({ message: "Invalid query or type" });
   }
 
-  const searchSQL =
-    type === "movie"
-      ? `SELECT movie_id, title, release_year 
-         FROM Movies 
-         WHERE LOWER(title) LIKE LOWER('%' || $1 || '%') 
-         ORDER BY title ASC LIMIT 4;`
-      : `SELECT m.movie_id, m.title, d.name AS director_name 
-         FROM Movies m 
-         JOIN Directors d ON m.director_id = d.director_id 
-         WHERE LOWER(d.name) LIKE LOWER('%' || $1 || '%') 
-         ORDER BY d.name ASC LIMIT 4;`;
+  // Build SQL
+  let sql;
+  if (type === "movie") {
+    sql = `
+      SELECT movie_id, title, release_year
+        FROM Movies
+       WHERE LOWER(title) LIKE LOWER('%' || $1 || '%')
+       ORDER BY title ASC
+       LIMIT 4;
+    `;
+  } else {
+    // director search → return all movies by directors matching query
+    sql = `
+      SELECT m.movie_id, m.title, m.release_year
+        FROM Movies m
+        JOIN Directors d
+          ON m.director_id = d.director_id
+       WHERE LOWER(d.name) LIKE LOWER('%' || $1 || '%')
+       ORDER BY m.title ASC
+       LIMIT 4;
+    `;
+  }
 
-  const client = await pool.connect(); // Get a client from the pool
+  const client = await pool.connect();
   try {
-    await client.query('BEGIN'); // Start the transaction
-
-    // Execute the query inside the transaction
-    const result = await client.query(searchSQL, [query]);
-
-    // Commit the transaction (though not strictly necessary for a read operation)
-    await client.query('COMMIT');
-
-    // Respond with the search results
-    res.status(200).json({ movies: result.rows });
+    const result = await client.query(sql, [query]);
+    // Always return under `movies`
+    res.json({ movies: result.rows });
   } catch (err) {
-    // Rollback in case of error
-    await client.query('ROLLBACK');
     console.error("Movie search error:", err);
     res.status(500).json({ message: "Internal server error" });
   } finally {
-    // Release the client back to the pool
     client.release();
   }
 });
+
+
+// app.get("/search-movies", isAuthenticated, async (req, res) => {
+//   const { query, type } = req.query;
+//   if (!query || !["movie", "director"].includes(type)) {
+//     return res.status(400).json({ message: "Invalid query or type" });
+//   }
+
+//   const searchSQL =
+//     type === "movie"
+//       ? `SELECT movie_id, title, release_year 
+//          FROM Movies 
+//          WHERE LOWER(title) LIKE LOWER('%' || $1 || '%') 
+//          ORDER BY title ASC LIMIT 4;`
+//       : `SELECT m.movie_id, m.title, d.name AS director_name 
+//          FROM Movies m 
+//          JOIN Directors d ON m.director_id = d.director_id 
+//          WHERE LOWER(d.name) LIKE LOWER('%' || $1 || '%') 
+//          ORDER BY d.name ASC LIMIT 4;`;
+
+//   const client = await pool.connect(); // Get a client from the pool
+//   try {
+//     await client.query('BEGIN'); // Start the transaction
+
+//     // Execute the query inside the transaction
+//     const result = await client.query(searchSQL, [query]);
+
+//     // Commit the transaction (though not strictly necessary for a read operation)
+//     await client.query('COMMIT');
+
+//     // Respond with the search results
+//     res.status(200).json({ movies: result.rows });
+//   } catch (err) {
+//     // Rollback in case of error
+//     await client.query('ROLLBACK');
+//     console.error("Movie search error:", err);
+//     res.status(500).json({ message: "Internal server error" });
+//   } finally {
+//     // Release the client back to the pool
+//     client.release();
+//   }
+// });
 
 
 // Movies recommendations endpoint
@@ -1524,7 +1567,345 @@ app.get("/movies/top-rated", isAuthenticated, async (req, res) => {
   }
 });
 
+////START GROUPBOOK /////
+app.post('/books/groups', isAuthenticated, async (req, res) => {
+  const type = "book";
+  const { name, description = '', isPublic } = req.body;
+  if (!name || typeof isPublic !== 'boolean') {
+    return res.status(400).json({ message: 'Name and visibility required' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `INSERT INTO Communities
+         (name, description, is_public, is_type, created_by)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING community_id AS group_id,name,description,is_public`,
+      [name, description, isPublic, type, req.session.userId]
+    );
+    const group = result.rows[0];
+    if (!isPublic) {
+      await client.query(
+        `INSERT INTO CommunityMembers
+           (community_id,user_id,role,status)
+         VALUES ($1,$2,'admin','joined')`,
+        [group.group_id, req.session.userId]
+      );
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ group });
 
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'Group name already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 2) Fetch popular groups
+app.get(`/books/groups/popular`, isAuthenticated, async (req, res) => {
+  const type = "book";
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const totalLimit   = 5;
+    const publicLimit  = Math.floor(Math.random()*(totalLimit-1))+1;
+    const privateLimit = totalLimit - publicLimit;
+
+    const pubQ = `
+      SELECT c.community_id,c.name,c.description,c.is_public,
+             COUNT(cm.user_id) AS member_count
+      FROM Communities c
+      LEFT JOIN CommunityMembers cm
+        ON cm.community_id = c.community_id AND cm.status = 'joined'
+      WHERE c.is_public = TRUE
+        AND c.is_type   = $1
+      GROUP BY c.community_id
+      ORDER BY RANDOM()
+      LIMIT $2
+    `;
+    const privQ = pubQ.replace('TRUE','FALSE');
+    const [pubRes, privRes] = await Promise.all([
+      client.query(pubQ,  [type, publicLimit]),
+      client.query(privQ, [type, privateLimit])
+    ]);
+
+    const combined = [...pubRes.rows, ...privRes.rows];
+    // shuffle
+    for (let i = combined.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [combined[i], combined[j]] = [combined[j], combined[i]];
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ popularGroups: combined });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 3) Fetch “My Groups”
+app.get("/books/my-groups", isAuthenticated, async (req, res) => {
+  const type = "book";
+  const client = await pool.connect();
+  try {
+    const q = `
+      SELECT c.community_id AS group_id,c.name,c.description,c.is_public,cm.role
+      FROM CommunityMembers cm
+      JOIN Communities c ON cm.community_id = c.community_id
+      WHERE cm.user_id = $1
+        AND cm.status  = 'joined'
+        AND c.is_type  = $2
+      ORDER BY c.name ASC
+    `;
+    const result = await client.query(q, [req.session.userId, type]);
+    res.status(200).json({ groups: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 4) Request access to a private group
+app.post(`/books/groups/:id/request-access`, isAuthenticated, async (req, res) => {
+  const type = "book";
+  const gid = parseInt(req.params.id, 10);
+  if (isNaN(gid)) return res.status(400).json({ message: 'Invalid group ID' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO CommunityMembers (community_id,user_id,role,status)
+         SELECT $1,$2,'member','requested'
+         WHERE EXISTS (
+           SELECT 1 FROM Communities
+           WHERE community_id = $1 AND is_type = $3
+         )
+         ON CONFLICT DO NOTHING`,
+      [gid, req.session.userId, type]
+    );
+    await client.query('COMMIT');
+    res.status(200).json({ message: 'Access request sent' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 5) Check access-status
+app.get(`/books/groups/:id/access-status`, isAuthenticated, async (req, res) => {
+  const type = "book";
+  const gid = parseInt(req.params.id, 10);
+  if (isNaN(gid)) return res.status(400).json({ message: 'Invalid group ID' });
+  const client = await pool.connect();
+  try {
+    const q = `
+      SELECT cm.status
+      FROM CommunityMembers cm
+      JOIN Communities c ON cm.community_id = c.community_id
+      WHERE cm.community_id = $1
+        AND cm.user_id      = $2
+        AND c.is_type       = $3
+    `;
+    const result = await client.query(q, [gid, req.session.userId, type]);
+    if (result.rows.length === 0) {
+      return res.status(200).json({ status: 'none' });
+    }
+    res.status(200).json({ status: result.rows[0].status });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+////START GROUPMOVIE/////
+app.post('/movies/groups', isAuthenticated, async (req, res) => {
+  const type = "movie";
+  const { name, description = '', isPublic } = req.body;
+  if (!name || typeof isPublic !== 'boolean') {
+    return res.status(400).json({ message: 'Name and visibility required' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `INSERT INTO Communities
+         (name, description, is_public, is_type, created_by)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING community_id AS group_id,name,description,is_public`,
+      [name, description, isPublic, type, req.session.userId]
+    );
+    const group = result.rows[0];
+    if (!isPublic) {
+      await client.query(
+        `INSERT INTO CommunityMembers
+           (community_id,user_id,role,status)
+         VALUES ($1,$2,'admin','joined')`,
+        [group.group_id, req.session.userId]
+      );
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ group });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({ message: 'Group name already exists' });
+    }
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 2) Fetch popular groups
+app.get(`/movies/groups/popular`, isAuthenticated, async (req, res) => {
+  const type = "movie";
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const totalLimit   = 5;
+    const publicLimit  = Math.floor(Math.random()*(totalLimit-1))+1;
+    const privateLimit = totalLimit - publicLimit;
+
+    const pubQ = `
+      SELECT c.community_id,c.name,c.description,c.is_public,
+             COUNT(cm.user_id) AS member_count
+      FROM Communities c
+      LEFT JOIN CommunityMembers cm
+        ON cm.community_id = c.community_id AND cm.status = 'joined'
+      WHERE c.is_public = TRUE
+        AND c.is_type   = $1
+      GROUP BY c.community_id
+      ORDER BY RANDOM()
+      LIMIT $2
+    `;
+    const privQ = pubQ.replace('TRUE','FALSE');
+    const [pubRes, privRes] = await Promise.all([
+      client.query(pubQ,  [type, publicLimit]),
+      client.query(privQ, [type, privateLimit])
+    ]);
+
+    const combined = [...pubRes.rows, ...privRes.rows];
+    // shuffle
+    for (let i = combined.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [combined[i], combined[j]] = [combined[j], combined[i]];
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ popularGroups: combined });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 3) Fetch “My Groups”
+app.get("/movies/my-groups", isAuthenticated, async (req, res) => {
+  const type = "movie";
+  const client = await pool.connect();
+  try {
+    const q = `
+      SELECT c.community_id AS group_id,c.name,c.description,c.is_public,cm.role
+      FROM CommunityMembers cm
+      JOIN Communities c ON cm.community_id = c.community_id
+      WHERE cm.user_id = $1
+        AND cm.status  = 'joined'
+        AND c.is_type  = $2
+      ORDER BY c.name ASC
+    `;
+    const result = await client.query(q, [req.session.userId, type]);
+    res.status(200).json({ groups: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 4) Request access to a private group
+app.post(`/movies/groups/:id/request-access`, isAuthenticated, async (req, res) => {
+  const type = "movie";
+  const gid = parseInt(req.params.id, 10);
+  if (isNaN(gid)) return res.status(400).json({ message: 'Invalid group ID' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO CommunityMembers (community_id,user_id,role,status)
+         SELECT $1,$2,'member','requested'
+         WHERE EXISTS (
+           SELECT 1 FROM Communities
+           WHERE community_id = $1 AND is_type = $3
+         )
+         ON CONFLICT DO NOTHING`,
+      [gid, req.session.userId, type]
+    );
+    await client.query('COMMIT');
+    res.status(200).json({ message: 'Access request sent' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// 5) Check access-status
+app.get(`/movies/groups/:id/access-status`, isAuthenticated, async (req, res) => {
+  const type = "movie";
+  const gid = parseInt(req.params.id, 10);
+  if (isNaN(gid)) return res.status(400).json({ message: 'Invalid group ID' });
+  const client = await pool.connect();
+  try {
+    const q = `
+      SELECT cm.status
+      FROM CommunityMembers cm
+      JOIN Communities c ON cm.community_id = c.community_id
+      WHERE cm.community_id = $1
+        AND cm.user_id      = $2
+        AND c.is_type       = $3
+    `;
+    const result = await client.query(q, [gid, req.session.userId, type]);
+    if (result.rows.length === 0) {
+      return res.status(200).json({ status: 'none' });
+    }
+    res.status(200).json({ status: result.rows[0].status });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
 
 app.post("/books/groups", isAuthenticated, async (req, res) => {
   const { name, description = "", isPublic } = req.body;
@@ -1658,9 +2039,6 @@ app.get("/books/groups/popular", isAuthenticated, async (req, res) => {
 });
 
 
-
-
-
 // POST /groups/:id/request-access
 // POST /books/groups/:id/request-access
 app.post("/books/groups/:id/request-access", isAuthenticated, async (req, res) => {
@@ -1736,6 +2114,33 @@ app.get("/books/groups/:id/access-status", isAuthenticated, async (req, res) => 
     res.status(500).json({ message: "Server error" });
   } finally {
     // Release the client back to the pool
+    client.release();
+  }
+});
+
+
+app.get("/books/my-groups", isAuthenticated, async (req, res) => {
+  const userId = req.session.userId;
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT c.community_id AS group_id, c.name, c.description, c.is_public, cm.role
+       FROM CommunityMembers cm
+       JOIN Communities c ON cm.community_id = c.community_id
+       WHERE cm.user_id = $1 AND cm.status = 'joined'
+       ORDER BY c.name ASC`,
+      [userId]
+    );
+
+    const myGroups = result.rows;
+    console.log(myGroups);
+    res.status(200).json({ groups: myGroups });
+
+  } catch (err) {
+    console.error("Error fetching my groups:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
     client.release();
   }
 });
@@ -2127,31 +2532,39 @@ app.get('/profile_top', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-app.get('/search_users', async (req, res) => {
-  const { username } = req.query;  // Extract username search term from query parameters
-  try {
-    if (!username) {
-      return res.status(400).json({ message: "Username search term is required." });
-    }
 
-    // SQL query to search for usernames
-    const query = `
-      SELECT username
+
+app.get("/search_users", isAuthenticated, async (req, res) => {
+  const { username } = req.query;
+  if (!username) {
+    return res
+      .status(400)
+      .json({ message: "Username search term is required." });
+  }
+
+  const client = await pool.connect();
+  try {
+    const sql = `
+      SELECT user_id, username
       FROM Users
       WHERE username ILIKE $1
+      ORDER BY username ASC
       LIMIT 10;
     `;
-    const values = [`%${username}%`];  // Use ILIKE for case-insensitive search
+    const values = [`%${username}%`];
 
-    const { rows } = await pool.query(query, values);
+    const { rows } = await client.query(sql, values);
 
-    // If users are found, send them as a response
-    res.status(200).json(rows);
-  } catch (error) {
-    console.error("Error searching for users:", error);
+    // *** Return under the `users` key so data.users is defined ***
+    res.status(200).json({ users: rows });
+  } catch (err) {
+    console.error("Error searching for users:", err);
     res.status(500).json({ message: "Internal server error." });
+  } finally {
+    client.release();
   }
 });
+
 
 app.get('/api/friend_request_status', async (req, res) => {
   const currentUserId = req.session.user_id; // or however you're handling auth
@@ -2245,28 +2658,28 @@ app.post("/api/handle_friend_request", async (req, res) => {
 
 
 // server.js (Express)
-app.get('/api/profiles/:username', async (req, res) => {
-  const { username } = req.params;
-  // Fetch from real DB:
-  const userResult = await pool.query(
-    `SELECT users.user_id, users.username, users.email, profiles.location, profiles.dob, profiles.contact FROM users INNER JOIN profiles ON users.user_id = profiles.user_id WHERE users.username = $1`,
-    [username]
-  );
-  if (userResult.rowCount === 0) {
-    return res.status(404).json({ message: 'User not found' });
-  }
-  const user = userResult.rows[0];
+// app.get('/api/profiles/:username', async (req, res) => {
+//   const { username } = req.params;
+//   // Fetch from real DB:
+//   const userResult = await pool.query(
+//     `SELECT users.user_id, users.username, users.email, profiles.location, profiles.dob, profiles.contact FROM users INNER JOIN profiles ON users.user_id = profiles.user_id WHERE users.username = $1`,
+//     [username]
+//   );
+//   if (userResult.rowCount === 0) {
+//     return res.status(404).json({ message: 'User not found' });
+//   }
+//   const user = userResult.rows[0];
 
-  // Fetch top‐data
-  const topResult = await pool.query(
-    `SELECT Genres.genre_name AS "topBookGenre", Authors.name AS "topAuthor" FROM BookFavoriteGenres INNER JOIN Genres ON BookFavoriteGenres.genre_id = Genres.genre_id INNER JOIN UserFavoriteAuthors ON BookFavoriteGenres.user_id = UserFavoriteAuthors.user_id INNER JOIN Authors ON UserFavoriteAuthors.author_id = Authors.author_id WHERE BookFavoriteGenres.user_id = $1`,
-    [user.user_id]
-  );
-  const top = topResult.rows[0] || {};
+//   // Fetch top‐data
+//   const topResult = await pool.query(
+//     `SELECT Genres.genre_name AS "topBookGenre", Authors.name AS "topAuthor" FROM BookFavoriteGenres INNER JOIN Genres ON BookFavoriteGenres.genre_id = Genres.genre_id INNER JOIN UserFavoriteAuthors ON BookFavoriteGenres.user_id = UserFavoriteAuthors.user_id INNER JOIN Authors ON UserFavoriteAuthors.author_id = Authors.author_id WHERE BookFavoriteGenres.user_id = $1`,
+//     [user.user_id]
+//   );
+//   const top = topResult.rows[0] || {};
 
-  // Merge and send
-  res.json({ ...user, ...top });
-});
+//   // Merge and send
+//   res.json({ ...user, ...top });
+// });
 
 // Public profile: no auth required
 app.get("/api/public_profile/:username", async (req, res) => {
@@ -2285,26 +2698,79 @@ app.get("/api/public_profile/:username", async (req, res) => {
 });
 
 
-app.get("/books/my-groups", isAuthenticated, async (req, res) => {
-  const userId = req.session.userId;
+app.get(`/books/groups/:groupId/posts`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const groupId = parseInt(req.params.groupId, 10);
+  if (isNaN(groupId)) return res.status(400).json({ message: "Invalid group ID" });
 
   const client = await pool.connect();
   try {
-    const result = await client.query(
-      `SELECT c.community_id AS group_id, c.name, c.description, c.is_public, cm.role
-       FROM CommunityMembers cm
-       JOIN Communities c ON cm.community_id = c.community_id
-       WHERE cm.user_id = $1 AND cm.status = 'joined'
-       ORDER BY c.name ASC`,
-      [userId]
-    );
+    await client.query("BEGIN");
 
-    const myGroups = result.rows;
-    console.log(myGroups);
-    res.status(200).json({ groups: myGroups });
+    // ensure group exists & is correct type
+    const chk = await client.query(
+      `SELECT 1 FROM Communities WHERE community_id = $1 AND is_type = $2`,
+      [groupId, type]
+    );
+    if (chk.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // fetch posts + like counts
+    const postsRes = await client.query(
+      `SELECT
+         p.post_id,
+         p.content,
+         p.created_at,
+         p.user_name,
+         COUNT(pl.user_id)::int AS likes
+       FROM Posts p
+       LEFT JOIN PostLikes pl
+         ON pl.post_id = p.post_id
+       WHERE p.community_id = $1
+       GROUP BY p.post_id, p.user_name
+       ORDER BY p.created_at DESC`,
+      [groupId]
+    );
+    const posts = postsRes.rows;
+
+    // fetch all comments in one go
+    const postIds = posts.map((p) => p.post_id);
+    let comments = [];
+    if (postIds.length) {
+      const cRes = await client.query(
+        `SELECT
+           pc.comment_id,
+           pc.post_id,
+           pc.content,
+           pc.created_at,
+           pc.user_name
+         FROM PostComments pc
+         WHERE pc.post_id = ANY($1::int[])
+         ORDER BY pc.created_at ASC`,
+        [postIds]
+      );
+      comments = cRes.rows;
+    }
+
+    // group comments under each post
+    const byPost = {};
+    comments.forEach((c) => {
+      byPost[c.post_id] = byPost[c.post_id] || [];
+      byPost[c.post_id].push(c);
+    });
+    const postsWithComments = posts.map((p) => ({
+      ...p,
+      comments: byPost[p.post_id] || []
+    }));
+
+    await client.query("COMMIT");
+    res.json({ posts: postsWithComments });
 
   } catch (err) {
-    console.error("Error fetching my groups:", err);
+    await client.query("ROLLBACK");
+    console.error("Error fetching group posts:", err);
     res.status(500).json({ message: "Server error" });
   } finally {
     client.release();
@@ -2312,6 +2778,804 @@ app.get("/books/my-groups", isAuthenticated, async (req, res) => {
 });
 
 
+
+///GROUPBOOK POSTS////
+// 2) Create a new post in a group
+app.post(`/books/groups/:groupId/posts`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const groupId = parseInt(req.params.groupId, 10);
+  const userId  = req.session.userId;
+  const { content } = req.body;
+  if (isNaN(groupId)) return res.status(400).json({ message: "Invalid group ID" });
+  if (!content?.trim())   return res.status(400).json({ message: "Post content is required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify group/type
+    const chk = await client.query(
+      `SELECT 1 FROM Communities WHERE community_id = $1 AND is_type = $2`,
+      [groupId, type]
+    );
+    if (!chk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // fetch username
+    const uRes = await client.query(
+      `SELECT username FROM Users WHERE user_id = $1`,
+      [userId]
+    );
+    const userName = uRes.rows[0]?.username || "Unknown";
+
+    // insert
+    const pRes = await client.query(
+      `INSERT INTO Posts (user_id, community_id, content, user_name)
+       VALUES ($1,$2,$3,$4)
+       RETURNING post_id, content, created_at, user_name`,
+      [userId, groupId, content.trim(), userName]
+    );
+
+    await client.query("COMMIT");
+    res.status(201).json({ message: "Post created", post: pRes.rows[0] });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error creating post:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// // 3) Like a post
+// app.post(`/books/groups/:groupId/posts/:postId/like`, isAuthenticated, async (req, res) => {
+//   const type = 'book';
+//   const groupId = parseInt(req.params.groupId, 10);
+//   const postId  = parseInt(req.params.postId, 10);
+//   const userId  = req.session.userId;
+//   if (isNaN(groupId) || isNaN(postId)) {
+//     return res.status(400).json({ message: "Invalid group or post ID" });
+//   }
+
+//   const client = await pool.connect();
+//   try {
+//     await client.query("BEGIN");
+
+//     // ensure post ∈ correct group ∧ type
+//     const postChk = await client.query(
+//       `SELECT 1
+//          FROM Posts p
+//          JOIN Communities c
+//            ON p.community_id = c.community_id
+//           AND c.is_type = $3
+//         WHERE p.post_id = $2
+//           AND p.community_id = $1`,
+//       [groupId, postId, type]
+//     );
+//     if (!postChk.rowCount) {
+//       await client.query("ROLLBACK");
+//       return res.status(404).json({ message: "Post not found" });
+//     }
+
+//     // ensure not already liked
+//     const likeChk = await client.query(
+//       `SELECT 1 FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+//       [userId, postId]
+//     );
+//     if (likeChk.rowCount) {
+//       await client.query("ROLLBACK");
+//       return res.status(400).json({ message: "Already liked" });
+//     }
+
+//     await client.query(
+//       `INSERT INTO PostLikes (user_id, post_id) VALUES ($1,$2)`,
+//       [userId, postId]
+//     );
+
+//     const cnt = await client.query(
+//       `SELECT COUNT(*)::int AS likes FROM PostLikes WHERE post_id = $1`,
+//       [postId]
+//     );
+
+//     await client.query("COMMIT");
+//     res.json({ message: "Liked", likes: cnt.rows[0].likes });
+
+//   } catch (err) {
+//     await client.query("ROLLBACK");
+//     console.error("Error liking post:", err);
+//     res.status(500).json({ message: "Server error" });
+//   } finally {
+//     client.release();
+//   }
+// });
+
+// 3) Toggle Like a post
+app.post(`/books/groups/:groupId/posts/:postId/like`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const groupId = parseInt(req.params.groupId, 10);
+  const postId  = parseInt(req.params.postId, 10);
+  const userId  = req.session.userId;
+  if (isNaN(groupId) || isNaN(postId)) {
+    return res.status(400).json({ message: "Invalid group or post ID" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Confirm post exists in the group and is of type 'book'
+    const postChk = await client.query(
+      `SELECT 1
+         FROM Posts p
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $3
+        WHERE p.post_id = $2
+          AND p.community_id = $1`,
+      [groupId, postId, type]
+    );
+    if (!postChk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Check if user already liked the post
+    const likeChk = await client.query(
+      `SELECT 1 FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+      [userId, postId]
+    );
+
+    let action;
+    if (likeChk.rowCount) {
+      // Unlike the post
+      await client.query(
+        `DELETE FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+        [userId, postId]
+      );
+      action = 'Unliked';
+    } else {
+      // Like the post
+      await client.query(
+        `INSERT INTO PostLikes (user_id, post_id) VALUES ($1,$2)`,
+        [userId, postId]
+      );
+      action = 'Liked';
+    }
+
+    const cnt = await client.query(
+      `SELECT COUNT(*)::int AS likes FROM PostLikes WHERE post_id = $1`,
+      [postId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ message: action, likes: cnt.rows[0].likes });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error toggling like:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+
+// 4) Fetch comments on a post
+app.get(`/books/groups/:groupId/posts/:postId/comments`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const groupId = parseInt(req.params.groupId, 10);
+  const postId  = parseInt(req.params.postId, 10);
+  if (isNaN(groupId) || isNaN(postId)) {
+    return res.status(400).json({ message: "Invalid IDs" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify post ∈ group ∧ type
+    const postChk = await client.query(
+      `SELECT 1
+         FROM Posts p
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $3
+        WHERE p.post_id = $2
+          AND p.community_id = $1`,
+      [groupId, postId, type]
+    );
+    if (!postChk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    const cRes = await client.query(
+      `SELECT
+         comment_id,
+         user_id,
+         user_name,
+         content,
+         created_at
+       FROM PostComments
+       WHERE post_id = $1
+       ORDER BY created_at ASC`,
+      [postId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ comments: cRes.rows });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error fetching comments:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// 5) Submit a new comment
+app.post(`/books/groups/:groupId/posts/:postId/comments`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const groupId = parseInt(req.params.groupId, 10);
+  const postId  = parseInt(req.params.postId, 10);
+  const userId  = req.session.userId;
+  const { content } = req.body;
+  if (isNaN(groupId)||isNaN(postId)) {
+    return res.status(400).json({ message: "Invalid IDs" });
+  }
+  if (!content?.trim()) {
+    return res.status(400).json({ message: "Comment required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify post ∈ group ∧ type
+    const postChk = await client.query(
+      `SELECT 1
+         FROM Posts p
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $3
+        WHERE p.post_id = $2
+          AND p.community_id = $1`,
+      [groupId, postId, type]
+    );
+    if (!postChk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // fetch username
+    const uRes = await client.query(
+      `SELECT username FROM Users WHERE user_id = $1`,
+      [userId]
+    );
+    const userName = uRes.rows[0]?.username || "Unknown";
+
+    // insert comment
+    const cRes = await client.query(
+      `INSERT INTO PostComments
+         (post_id, user_id, content, user_name)
+       VALUES ($1,$2,$3,$4)
+       RETURNING comment_id, user_id, content, created_at, user_name`,
+      [postId, userId, content.trim(), userName]
+    );
+
+    await client.query("COMMIT");
+    res.json({ message: "Comment added", comment: cRes.rows[0] });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error submitting comment:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// 6) Edit a comment
+app.put(`/books/groups/:groupId/posts/:postId/comments/:commentId`, isAuthenticated, async (req, res) => {
+  const type = 'book';
+  const { groupId, postId, commentId } = req.params;
+  const userId = req.session.userId;
+  const { content } = req.body;
+  if (!content?.trim()) {
+    return res.status(400).json({ message: "Comment content required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify ownership and group/type
+    const chk = await client.query(
+      `SELECT 1
+         FROM PostComments pc
+         JOIN Posts p
+           ON pc.post_id = p.post_id
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $4
+        WHERE pc.comment_id = $1
+          AND pc.user_id    = $3
+          AND p.post_id     = $2`,
+      [commentId, postId, userId, type]
+    );
+    if (!chk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Not authorized to edit" });
+    }
+
+    await client.query(
+      `UPDATE PostComments
+         SET content = $1
+       WHERE comment_id = $2`,
+      [content.trim(), commentId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ message: "Comment updated" });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error updating comment:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+app.get(`/movies/groups/:groupId/posts`, isAuthenticated, async (req, res) => {
+  const type = 'movie';
+  const groupId = parseInt(req.params.groupId, 10);
+  if (isNaN(groupId)) return res.status(400).json({ message: "Invalid group ID" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // ensure group exists & is correct type
+    const chk = await client.query(
+      `SELECT 1 FROM Communities WHERE community_id = $1 AND is_type = $2`,
+      [groupId, type]
+    );
+    if (chk.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // fetch posts + like counts
+    const postsRes = await client.query(
+      `SELECT
+         p.post_id,
+         p.content,
+         p.created_at,
+         p.user_name,
+         COUNT(pl.user_id)::int AS likes
+       FROM Posts p
+       LEFT JOIN PostLikes pl
+         ON pl.post_id = p.post_id
+       WHERE p.community_id = $1
+       GROUP BY p.post_id, p.user_name
+       ORDER BY p.created_at DESC`,
+      [groupId]
+    );
+    const posts = postsRes.rows;
+
+    // fetch all comments in one go
+    const postIds = posts.map((p) => p.post_id);
+    let comments = [];
+    if (postIds.length) {
+      const cRes = await client.query(
+        `SELECT
+           pc.comment_id,
+           pc.post_id,
+           pc.content,
+           pc.created_at,
+           pc.user_name
+         FROM PostComments pc
+         WHERE pc.post_id = ANY($1::int[])
+         ORDER BY pc.created_at ASC`,
+        [postIds]
+      );
+      comments = cRes.rows;
+    }
+
+    // group comments under each post
+    const byPost = {};
+    comments.forEach((c) => {
+      byPost[c.post_id] = byPost[c.post_id] || [];
+      byPost[c.post_id].push(c);
+    });
+    const postsWithComments = posts.map((p) => ({
+      ...p,
+      comments: byPost[p.post_id] || []
+    }));
+
+    await client.query("COMMIT");
+    res.json({ posts: postsWithComments });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error fetching group posts:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+
+
+///GROUPBOOK POSTS////
+// 2) Create a new post in a group
+app.post(`/movies/groups/:groupId/posts`, isAuthenticated, async (req, res) => {
+  const type = 'movie';
+  const groupId = parseInt(req.params.groupId, 10);
+  const userId  = req.session.userId;
+  const { content } = req.body;
+  if (isNaN(groupId)) return res.status(400).json({ message: "Invalid group ID" });
+  if (!content?.trim())   return res.status(400).json({ message: "Post content is required" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify group/type
+    const chk = await client.query(
+      `SELECT 1 FROM Communities WHERE community_id = $1 AND is_type = $2`,
+      [groupId, type]
+    );
+    if (!chk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // fetch username
+    const uRes = await client.query(
+      `SELECT username FROM Users WHERE user_id = $1`,
+      [userId]
+    );
+    const userName = uRes.rows[0]?.username || "Unknown";
+
+    // insert
+    const pRes = await client.query(
+      `INSERT INTO Posts (user_id, community_id, content, user_name)
+       VALUES ($1,$2,$3,$4)
+       RETURNING post_id, content, created_at, user_name`,
+      [userId, groupId, content.trim(), userName]
+    );
+
+    await client.query("COMMIT");
+    res.status(201).json({ message: "Post created", post: pRes.rows[0] });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error creating post:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// 3) Like a post
+// app.post(`/movies/groups/:groupId/posts/:postId/like`, isAuthenticated, async (req, res) => {
+//   const type = 'movie';
+//   const groupId = parseInt(req.params.groupId, 10);
+//   const postId  = parseInt(req.params.postId, 10);
+//   const userId  = req.session.userId;
+//   if (isNaN(groupId) || isNaN(postId)) {
+//     return res.status(400).json({ message: "Invalid group or post ID" });
+//   }
+
+//   const client = await pool.connect();
+//   try {
+//     await client.query("BEGIN");
+
+//     // ensure post ∈ correct group ∧ type
+//     const postChk = await client.query(
+//       `SELECT 1
+//          FROM Posts p
+//          JOIN Communities c
+//            ON p.community_id = c.community_id
+//           AND c.is_type = $3
+//         WHERE p.post_id = $2
+//           AND p.community_id = $1`,
+//       [groupId, postId, type]
+//     );
+//     if (!postChk.rowCount) {
+//       await client.query("ROLLBACK");
+//       return res.status(404).json({ message: "Post not found" });
+//     }
+
+//     // ensure not already liked
+//     const likeChk = await client.query(
+//       `SELECT 1 FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+//       [userId, postId]
+//     );
+//     if (likeChk.rowCount) {
+//       await client.query("ROLLBACK");
+//       return res.status(400).json({ message: "Already liked" });
+//     }
+
+//     await client.query(
+//       `INSERT INTO PostLikes (user_id, post_id) VALUES ($1,$2)`,
+//       [userId, postId]
+//     );
+
+//     const cnt = await client.query(
+//       `SELECT COUNT(*)::int AS likes FROM PostLikes WHERE post_id = $1`,
+//       [postId]
+//     );
+
+//     await client.query("COMMIT");
+//     res.json({ message: "Liked", likes: cnt.rows[0].likes });
+
+//   } catch (err) {
+//     await client.query("ROLLBACK");
+//     console.error("Error liking post:", err);
+//     res.status(500).json({ message: "Server error" });
+//   } finally {
+//     client.release();
+//   }
+// });
+
+app.post(
+  "/movies/groups/:groupId/posts/:postId/like",
+  isAuthenticated,
+  async (req, res) => {
+    const type    = 'movie';
+    const groupId = parseInt(req.params.groupId, 10);
+    const postId  = parseInt(req.params.postId, 10);
+    const userId  = req.session.userId;
+
+    if (isNaN(groupId) || isNaN(postId)) {
+      return res.status(400).json({ message: "Invalid group or post ID" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Confirm post exists in this movie‐group
+      const postChk = await client.query(
+        `SELECT 1
+           FROM Posts p
+           JOIN Communities c
+             ON p.community_id = c.community_id
+            AND c.is_type = $3
+          WHERE p.post_id = $2
+            AND p.community_id = $1`,
+        [groupId, postId, type]
+      );
+      if (!postChk.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      // Check if already liked
+      const likeChk = await client.query(
+        `SELECT 1
+           FROM PostLikes
+          WHERE user_id = $1
+            AND post_id = $2`,
+        [userId, postId]
+      );
+
+      let action;
+      if (likeChk.rowCount) {
+        // Unlike
+        await client.query(
+          `DELETE FROM PostLikes
+            WHERE user_id = $1
+              AND post_id = $2`,
+          [userId, postId]
+        );
+        action = 'Unliked';
+      } else {
+        // Like
+        await client.query(
+          `INSERT INTO PostLikes (user_id, post_id)
+            VALUES ($1, $2)`,
+          [userId, postId]
+        );
+        action = 'Liked';
+      }
+
+      // Return updated count
+      const cnt = await client.query(
+        `SELECT COUNT(*)::int AS likes
+           FROM PostLikes
+          WHERE post_id = $1`,
+        [postId]
+      );
+
+      await client.query("COMMIT");
+      res.json({ message: action, likes: cnt.rows[0].likes });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Error toggling movie‐post like:", err);
+      res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+
+// 4) Fetch comments on a post
+app.get(`/movies/groups/:groupId/posts/:postId/comments`, isAuthenticated, async (req, res) => {
+  const type = 'movie';
+  const groupId = parseInt(req.params.groupId, 10);
+  const postId  = parseInt(req.params.postId, 10);
+  if (isNaN(groupId) || isNaN(postId)) {
+    return res.status(400).json({ message: "Invalid IDs" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify post ∈ group ∧ type
+    const postChk = await client.query(
+      `SELECT 1
+         FROM Posts p
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $3
+        WHERE p.post_id = $2
+          AND p.community_id = $1`,
+      [groupId, postId, type]
+    );
+    if (!postChk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    const cRes = await client.query(
+      `SELECT
+         comment_id,
+         user_id,
+         user_name,
+         content,
+         created_at
+       FROM PostComments
+       WHERE post_id = $1
+       ORDER BY created_at ASC`,
+      [postId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ comments: cRes.rows });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error fetching comments:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// 5) Submit a new comment
+app.post(`/movies/groups/:groupId/posts/:postId/comments`, isAuthenticated, async (req, res) => {
+  const type = 'movie';
+  const groupId = parseInt(req.params.groupId, 10);
+  const postId  = parseInt(req.params.postId, 10);
+  const userId  = req.session.userId;
+  const { content } = req.body;
+  if (isNaN(groupId)||isNaN(postId)) {
+    return res.status(400).json({ message: "Invalid IDs" });
+  }
+  if (!content?.trim()) {
+    return res.status(400).json({ message: "Comment required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify post ∈ group ∧ type
+    const postChk = await client.query(
+      `SELECT 1
+         FROM Posts p
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $3
+        WHERE p.post_id = $2
+          AND p.community_id = $1`,
+      [groupId, postId, type]
+    );
+    if (!postChk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // fetch username
+    const uRes = await client.query(
+      `SELECT username FROM Users WHERE user_id = $1`,
+      [userId]
+    );
+    const userName = uRes.rows[0]?.username || "Unknown";
+
+    // insert comment
+    const cRes = await client.query(
+      `INSERT INTO PostComments
+         (post_id, user_id, content, user_name)
+       VALUES ($1,$2,$3,$4)
+       RETURNING comment_id, user_id, content, created_at, user_name`,
+      [postId, userId, content.trim(), userName]
+    );
+
+    await client.query("COMMIT");
+    res.json({ message: "Comment added", comment: cRes.rows[0] });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error submitting comment:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
+// 6) Edit a comment
+app.put(`/movies/groups/:groupId/posts/:postId/comments/:commentId`, isAuthenticated, async (req, res) => {
+  const type = 'movie';
+  const { groupId, postId, commentId } = req.params;
+  const userId = req.session.userId;
+  const { content } = req.body;
+  if (!content?.trim()) {
+    return res.status(400).json({ message: "Comment content required" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // verify ownership and group/type
+    const chk = await client.query(
+      `SELECT 1
+         FROM PostComments pc
+         JOIN Posts p
+           ON pc.post_id = p.post_id
+         JOIN Communities c
+           ON p.community_id = c.community_id
+          AND c.is_type = $4
+        WHERE pc.comment_id = $1
+          AND pc.user_id    = $3
+          AND p.post_id     = $2`,
+      [commentId, postId, userId, type]
+    );
+    if (!chk.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "Not authorized to edit" });
+    }
+
+    await client.query(
+      `UPDATE PostComments
+         SET content = $1
+       WHERE comment_id = $2`,
+      [content.trim(), commentId]
+    );
+
+    await client.query("COMMIT");
+    res.json({ message: "Comment updated" });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error updating comment:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
 // GET /books/groups/:id/posts
 // Fetch all posts in a group
 app.get("/books/groups/:groupId/posts", isAuthenticated, async (req, res) => {
@@ -2914,10 +4178,254 @@ app.post('/user/movie-genres', isAuthenticated, async (req, res) => {
 });
 
 
+app.get("/books/friends", isAuthenticated, async (req, res) => {
+  const userId = req.session.userId;
+  const client = await pool.connect();
+  try {
+    const sql = `
+      SELECT u.user_id, u.username
+      FROM Friends f
+      JOIN Users u ON (
+        (f.requester_id = $1 AND u.user_id = f.addressee_id)
+        OR
+        (f.addressee_id = $1 AND u.user_id = f.requester_id)
+      )
+      WHERE (f.requester_id = $1 OR f.addressee_id = $1)
+        AND f.status = 'accepted'
+      ORDER BY u.username ASC;
+    `;
+    const result = await client.query(sql, [userId]);
+    res.status(200).json({ friends: result.rows });
+  } catch (err) {
+    console.error("Error fetching friends:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
 
+app.delete(
+  "/books/groups/:groupId/posts/:postId/like",
+  isAuthenticated,
+  async (req, res) => {
+    const userId  = req.session.userId;
+    const groupId = parseInt(req.params.groupId, 10);
+    const postId  = parseInt(req.params.postId, 10);
+    if (isNaN(groupId) || isNaN(postId)) {
+      return res.status(400).json({ message: "Invalid IDs" });
+    }
 
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
+      // Ensure the post is in this group
+      const chk = await client.query(
+        `SELECT 1 FROM Posts WHERE post_id = $1 AND community_id = $2`,
+        [postId, groupId]
+      );
+      if (!chk.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Post not found in this group" });
+      }
+
+      // Delete the like
+      await client.query(
+        `DELETE FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+        [userId, postId]
+      );
+
+      // Return updated like count
+      const countRes = await client.query(
+        `SELECT COUNT(*)::int AS likes FROM PostLikes WHERE post_id = $1`,
+        [postId]
+      );
+
+      await client.query("COMMIT");
+      res.json({ likes: countRes.rows[0].likes });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Error unliking post:", err);
+      res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
 // GET all genres (for selection step)
+
+app.delete(
+  "/movies/groups/:groupId/posts/:postId/like",
+  isAuthenticated,
+  async (req, res) => {
+    const userId  = req.session.userId;
+    const groupId = parseInt(req.params.groupId, 10);
+    const postId  = parseInt(req.params.postId, 10);
+    if (isNaN(groupId) || isNaN(postId)) {
+      return res.status(400).json({ message: "Invalid IDs" });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // Ensure the post is in this group
+      const chk = await client.query(
+        `SELECT 1 FROM Posts WHERE post_id = $1 AND community_id = $2`,
+        [postId, groupId]
+      );
+      if (!chk.rowCount) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Post not found in this group" });
+      }
+
+      // Delete the like
+      await client.query(
+        `DELETE FROM PostLikes WHERE user_id = $1 AND post_id = $2`,
+        [userId, postId]
+      );
+
+      // Return updated like count
+      const countRes = await client.query(
+        `SELECT COUNT(*)::int AS likes FROM PostLikes WHERE post_id = $1`,
+        [postId]
+      );
+
+      await client.query("COMMIT");
+      res.json({ likes: countRes.rows[0].likes });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error("Error unliking post:", err);
+      res.status(500).json({ message: "Server error" });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+// in your Express app setup
+
+// Count total book reviews by the current user
+app.get("/profile/counts/books", isAuthenticated, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM Reviews
+        WHERE user_id = $1`,
+      [req.session.userId]
+    );
+    res.json({ count: rows[0].count });
+  } catch (err) {
+    console.error("Error fetching book review count:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Count total movie reviews by the current user
+app.get("/profile/counts/movies", isAuthenticated, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM MovieReviews
+        WHERE user_id = $1`,
+      [req.session.userId]
+    );
+    res.json({ count: rows[0].count });
+  } catch (err) {
+    console.error("Error fetching movie review count:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// in your Express app setup
+
+// In your Express app setup
+
+app.get("/api/profiles/:username", isAuthenticated, async (req, res) => {
+  const { username } = req.params;
+  const client = await pool.connect();
+
+  try {
+    // 1) Load user + profile info
+    const userRes = await client.query(
+      `
+        SELECT
+          u.user_id,
+          u.username,
+          u.email,
+          p.location,
+          p.dob,
+          p.contact
+        FROM Users u
+        LEFT JOIN Profiles p ON u.user_id = p.user_id
+        WHERE u.username = $1
+      `,
+      [username]
+    );
+    if (userRes.rowCount === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const user = userRes.rows[0];
+
+    // 2) Fetch top book genre (if any)
+    const topGenreRes = await client.query(
+      `
+        SELECT g.genre_name AS topBookGenre
+        FROM BookFavoriteGenres bg
+        JOIN Genres g ON bg.genre_id = g.genre_id
+        WHERE bg.user_id = $1
+        LIMIT 1
+      `,
+      [user.user_id]
+    );
+    const topBookGenre = topGenreRes.rows[0]?.topbookgenre || "";
+
+    // 3) Fetch top author (if any)
+    const topAuthorRes = await client.query(
+      `
+        SELECT a.name AS topAuthor
+        FROM UserFavoriteAuthors ua
+        JOIN Authors a ON ua.author_id = a.author_id
+        WHERE ua.user_id = $1
+        LIMIT 1
+      `,
+      [user.user_id]
+    );
+    const topAuthor = topAuthorRes.rows[0]?.topauthor || "";
+
+    // 4) Count book reviews
+    const bookCountRes = await client.query(
+      `SELECT COUNT(*)::int AS bookReviews FROM Reviews WHERE user_id = $1`,
+      [user.user_id]
+    );
+
+    // 5) Count movie reviews
+    const movieCountRes = await client.query(
+      `SELECT COUNT(*)::int AS movieReviews FROM MovieReviews WHERE user_id = $1`,
+      [user.user_id]
+    );
+
+    // 6) Assemble and send
+    res.json({
+      username:     user.username,
+      email:        user.email,
+      location:     user.location,
+      dob:          user.dob,
+      contact:      user.contact,
+      topBookGenre,
+      topAuthor,
+      bookReviews:  bookCountRes.rows[0].bookreviews,
+      movieReviews: movieCountRes.rows[0].moviereviews,
+    });
+  } catch (err) {
+    console.error("Error fetching profile:", err);
+    res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
+
 
 
 app.listen(port, () => {

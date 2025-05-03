@@ -1,0 +1,61 @@
+/* Layout container: two-column */
+.friends-layout {
+    display: flex;
+    gap: 2rem;
+    padding: 1rem;
+  }
+  
+  /* Left section: search users */
+  .friends-search-section {
+    flex: 1;
+    min-width: 250px;
+  }
+  
+  /* Right section: my friends */
+  .friends-list-section {
+    flex: 1;
+    min-width: 250px;
+  }
+  
+  /* User and Friend cards */
+  .user-card,
+  .friend-card {
+    border: 1px solid #ccc;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  /* Titles within cards */
+  .user-card h3,
+  .friend-card h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  
+  /* Buttons inside cards */
+  .user-card button,
+  .friend-card button {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+  }
+  
+  /* Search input styling */
+  .friends-search-section input[type="text"] {
+    width: 100%;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 0.3rem;
+  }
+  
+  /* Loading text */
+  .friends-search-section p,
+  .friends-list-section p {
+    margin: 0.5rem 0;
+  }

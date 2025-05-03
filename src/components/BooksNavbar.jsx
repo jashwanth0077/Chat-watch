@@ -212,7 +212,6 @@ const BooksNavbar = () => {
           <div className="dropdown-menu">
             <button onClick={() => navigate("/books/groups")}>Groups</button>
             <button onClick={() => navigate("/books/friends")}>Friends</button>
-            <button onClick={() => navigate("/books/people")}>People</button>
           </div>
         )}
       </div>

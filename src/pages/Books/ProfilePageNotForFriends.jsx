@@ -8,54 +8,73 @@ const ProfileForNotFriends = () => {
 
   const [profile, setProfile] = useState(null);
   const [topData, setTopData] = useState({ topBookGenres: [], topAuthors: [] });
+  const [counts, setCounts] = useState({ bookReviews: 0, movieReviews: 0 });
   const [loading, setLoading] = useState(true);
   const [sendingRequest, setSendingRequest] = useState(false);
   const [error, setError] = useState("");
   const [friendStatus, setFriendStatus] = useState("loading");
 
   useEffect(() => {
-    const fetchPublicProfile = async () => {
+    async function loadAll() {
       try {
-        const res = await fetch(`${apiUrl}/api/profiles/${username}`);
-        if (res.status === 404) throw new Error("User not found.");
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        // 1 API call returns everything
+        const res = await fetch(`${apiUrl}/api/profiles/${username}`, {
+          credentials: "include",
+        });
+        if (res.status === 404) {
+          throw new Error("User not found.");
+        }
+        if (!res.ok) {
+          throw new Error(`Server error: ${res.status}`);
+        }
         const data = await res.json();
+
+        // Profile fields
         setProfile({
           username: data.username,
-          email: data.email,
+          email:    data.email,
+          dob:      data.dob,
           location: data.location,
-          dob: data.dob,
-          contact: data.contact,
+          contact:  data.contact,
         });
+
+        // Top picks
         setTopData({
-          topBookGenres: data.topBookGenre && data.topBookGenre !== "N/A" ? [data.topBookGenre] : [],
-          topAuthors: data.topAuthor && data.topAuthor !== "N/A" ? [data.topAuthor] : [],
+          topBookGenres:
+            data.topBookGenre && data.topBookGenre !== ""
+              ? [data.topBookGenre]
+              : [],
+          topAuthors:
+            data.topAuthor && data.topAuthor !== ""
+              ? [data.topAuthor]
+              : [],
         });
+
+        // Counts
+        setCounts({
+          bookReviews:  data.bookReviews  || 0,
+          movieReviews: data.movieReviews || 0,
+        });
+
+        // Friend status (separate endpoint remains)
+        const statusRes = await fetch(
+          `${apiUrl}/api/friend_request_status?toUsername=${username}`,
+          { credentials: "include" }
+        );
+        const statusJson = await statusRes.json();
+        setFriendStatus(statusJson.status);
       } catch (err) {
-        setError(err.message || "Network or server error.");
+        console.error(err);
+        setError(err.message);
         setProfile(null);
       } finally {
         setLoading(false);
       }
-    };
+    }
+    loadAll();
+  }, [username, navigate]);
 
-    const checkFriendRequestStatus = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/api/friend_request_status?toUsername=${username}`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        setFriendStatus(data.status); // expected values: friends, requested, pending_you, none
-      } catch (err) {
-        console.error("Could not check friend request status", err);
-        setFriendStatus("error");
-      }
-    };
-
-    fetchPublicProfile();
-    checkFriendRequestStatus();
-  }, [username]);
-
+  // Friend-request handlers unchanged...
   const handleSendFriendRequest = async () => {
     setSendingRequest(true);
     try {
@@ -68,12 +87,11 @@ const ProfileForNotFriends = () => {
       if (!res.ok) throw new Error("Failed to send friend request");
       setFriendStatus("requested");
     } catch (err) {
-      alert(err.message || "Failed to send friend request.");
+      alert(err.message);
     } finally {
       setSendingRequest(false);
     }
   };
-
   const handleAcceptRequest = async () => {
     try {
       const res = await fetch(`${apiUrl}/api/respond_friend_request`, {
@@ -82,13 +100,12 @@ const ProfileForNotFriends = () => {
         credentials: "include",
         body: JSON.stringify({ fromUsername: username, action: "accept" }),
       });
-      if (!res.ok) throw new Error("Failed to accept friend request");
+      if (!res.ok) throw new Error("Failed to accept");
       setFriendStatus("friends");
     } catch (err) {
-      alert(err.message || "Failed to accept request");
+      alert(err.message);
     }
   };
-
   const handleRejectRequest = async () => {
     try {
       const res = await fetch(`${apiUrl}/api/respond_friend_request`, {
@@ -97,13 +114,12 @@ const ProfileForNotFriends = () => {
         credentials: "include",
         body: JSON.stringify({ fromUsername: username, action: "reject" }),
       });
-      if (!res.ok) throw new Error("Failed to reject friend request");
+      if (!res.ok) throw new Error("Failed to reject");
       setFriendStatus("none");
     } catch (err) {
-      alert(err.message || "Failed to reject request");
+      alert(err.message);
     }
   };
-
   const handleBreakFriendship = async () => {
     try {
       const res = await fetch(`${apiUrl}/api/break_friendship`, {
@@ -112,10 +128,10 @@ const ProfileForNotFriends = () => {
         credentials: "include",
         body: JSON.stringify({ fromUsername: username }),
       });
-      if (!res.ok) throw new Error("Failed to break friendship");
+      if (!res.ok) throw new Error("Failed to break");
       setFriendStatus("none");
     } catch (err) {
-      alert(err.message || "Failed to break friendship");
+      alert(err.message);
     }
   };
 
@@ -123,7 +139,7 @@ const ProfileForNotFriends = () => {
   if (!profile)
     return (
       <div className="profile-container">
-        <p>{error || "User not found or server error."}</p>
+        <p>{error}</p>
         <button onClick={() => navigate("/books/friends")}>Back to Search</button>
       </div>
     );
@@ -131,15 +147,42 @@ const ProfileForNotFriends = () => {
   return (
     <div className="profile-container" style={{ maxWidth: 500, margin: "auto", padding: "1rem" }}>
       <h2>{profile.username}'s Profile</h2>
-      <div className="profile-details">
-        <p><strong>Email:</strong> {profile.email}</p>
-        <p><strong>DOB:</strong> {profile.dob ? new Date(profile.dob).toLocaleDateString() : "—"}</p>
-        <p><strong>Location:</strong> {profile.location || "—"}</p>
-        <p><strong>Contact:</strong> {profile.contact || "—"}</p>
-        <p><strong>Top Book Genres:</strong> {topData.topBookGenres.length > 0 ? topData.topBookGenres.join(", ") : "N/A"}</p>
-        <p><strong>Top Authors:</strong> {topData.topAuthors.length > 0 ? topData.topAuthors.join(", ") : "N/A"}</p>
+
+      {/* REVIEW COUNTS */}
+      <div style={{ marginBottom: "1rem" }}>
+        <strong>Book Reviews:</strong> {counts.bookReviews} &nbsp;|&nbsp;
+        <strong>Movie Reviews:</strong> {counts.movieReviews}
       </div>
 
+      <div className="profile-details">
+        <p>
+          <strong>Email:</strong> {profile.email}
+        </p>
+        <p>
+          <strong>DOB:</strong>{" "}
+          {profile.dob ? new Date(profile.dob).toLocaleDateString() : "—"}
+        </p>
+        <p>
+          <strong>Location:</strong> {profile.location || "—"}
+        </p>
+        <p>
+          <strong>Contact:</strong> {profile.contact || "—"}
+        </p>
+        <p>
+          <strong>Top Book Genres:</strong>{" "}
+          {topData.topBookGenres.length
+            ? topData.topBookGenres.join(", ")
+            : "N/A"}
+        </p>
+        <p>
+          <strong>Top Authors:</strong>{" "}
+          {topData.topAuthors.length
+            ? topData.topAuthors.join(", ")
+            : "N/A"}
+        </p>
+      </div>
+
+      {/* FRIEND-REQUEST UI */}
       <div style={{ marginTop: "1rem" }}>
         <button onClick={() => navigate("/books/friends")} style={{ marginRight: "0.5rem" }}>
           Back to Search
@@ -147,10 +190,10 @@ const ProfileForNotFriends = () => {
 
         {friendStatus === "friends" && (
           <>
-            <span style={{ fontWeight: "bold", color: "green" }}>Friends</span>
+            <span style={{ color: "green", fontWeight: "bold" }}>Friends</span>
             <button
               onClick={handleBreakFriendship}
-              style={{ backgroundColor: "#f8d7da", color: "#721c24", marginLeft: "1rem" }}
+              style={{ marginLeft: "1rem", backgroundColor: "#f8d7da", color: "#721c24" }}
             >
               Break Friendship
             </button>
@@ -158,7 +201,7 @@ const ProfileForNotFriends = () => {
         )}
 
         {friendStatus === "requested" && (
-          <button disabled style={{ backgroundColor: "#ccc", cursor: "not-allowed" }}>
+          <button disabled style={{ backgroundColor: "#ccc" }}>
             Request Sent
           </button>
         )}

@@ -23,8 +23,9 @@ import Genres from "./pages/Books/Genres";
 import NewReleases from "./pages/Books/NewReleases";
 import ChoiceAwards from "./pages/Books/ChoiceAwards";
 import BookDetails from "./pages/Books/BookDetails";
-import Profile from "./pages/Books/profile";
 
+//Common
+import Profile from "./pages/Books/profile";
 import FriendsPage from "./pages/Books/FriendsPage";
 import ProfilePageNotForFriends from "./pages/Books/ProfilePageNotForFriends";
 
@@ -36,9 +37,13 @@ import MovieDetails from "./pages/Movies/MoviesDetails";
 import MovieGenres from "./pages/Movies/Genres";
 import MovieNewReleases from "./pages/Movies/NewReleases";
 import MovieTopRated from "./pages/Movies/TopRated";
+import GroupsM from "./pages/Movies/GroupsM";
+import GroupPostsM from "./pages/Movies/GroupPostsM";
 
 import Groups from "./pages/Books/Groups";
 import GroupPosts from "./pages/Books/GroupPosts";
+
+import ProfileM from "./pages/Movies/profileM";
 
 function App() {
   const location = useLocation();
@@ -95,8 +100,15 @@ function App() {
         <Route path="/movies/genres" element={<MovieGenres />} />
         <Route path="/movies/new-releases" element={<MovieNewReleases />} />
         <Route path="/movies/top-rated" element={<MovieTopRated />} />
+        <Route path="/movies/movie/:movieId"  element={<MovieDetails />} />
+        <Route path="/movies/profile"  element={<ProfileM />} />
 
-        {/* Community */}
+        <Route path="/profile" element={<ProfileM />} />
+
+        <Route path="/movies/friends" element={<FriendsPage />} />
+        <Route path="/movies/profile_page_not_for_friends/:username" element={<ProfilePageNotForFriends />} />
+
+        {/* Books Community */}
         <Route path="/books/groups" element={<Groups />} />
         <Route path="/books/groups/:id" element={<GroupPosts />} />
         <Route path="/books/groups/popular"          element={<Groups />} />
@@ -105,6 +117,18 @@ function App() {
         <Route path="/books/groups/:groupId/posts/:postId/comments" element={<GroupPosts />} />
         <Route path="/books/groups/:id/access-status" element={<GroupPosts />} />
         <Route path="/books/groups/:id/request-access" element={<GroupPosts />} />
+
+
+        {/* Movies Community */}
+        <Route path="/movies/groups" element={<GroupsM />} />
+        <Route path="/movies/groups/:id" element={<GroupPostsM />} />
+        <Route path="/movies/groups/popular"          element={<GroupsM />} />
+        <Route path="/movies/groups/:id/posts" element={<GroupPostsM />} />
+        <Route path="/movies/groups/:groupId/posts/:postId/like" element={<GroupPostsM />} />
+        <Route path="/movies/groups/:groupId/posts/:postId/comments" element={<GroupPostsM />} />
+        <Route path="/movies/groups/:id/access-status" element={<GroupPostsM />} />
+        <Route path="/movies/groups/:id/request-access" element={<GroupPostsM />} />
+
 
         
         {/* Fallback */}
